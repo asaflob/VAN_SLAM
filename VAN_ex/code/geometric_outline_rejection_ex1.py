@@ -54,7 +54,7 @@ def read_and_extract_matches(index=0):
     left_kp, left_desc = FEATURE.detectAndCompute(left_img, None)
     right_kp, desc_right = FEATURE.detectAndCompute(right_img, None)
     matches = MATCHER.match(left_desc, desc_right)
-    return left_img, right_img, left_kp, right_kp, matches
+    return left_img, right_img, left_kp, right_kp, left_desc, desc_right,matches
 
 ####### 2.1 #######
 def analyze_rectified_pattern(left_kp, right_kp, matches, threshold=2.0):
@@ -100,83 +100,76 @@ def analyze_rectified_pattern(left_kp, right_kp, matches, threshold=2.0):
     return deviations
 
 def main_2_1():
-    left_img, right_img, left_kp, right_kp, matches = read_and_extract_matches(0)
+    left_img, right_img, left_kp, right_kp, _,_,matches = read_and_extract_matches(0)
     deviations = analyze_rectified_pattern(left_kp, right_kp, matches)
     return deviations
 
 ######## 2.2 #######
 
 
-def filter_and_plot_rectified_matches(img_left, img_right, matches, kp_left, kp_right,
-                                      title="Rectified Stereo Pattern Rejection"):
+def filter_rectified_matches(matches, kp_left, kp_right, y_threshold=2.0):
     """
-    Filters matches based on the rectified stereo constraint (y-axis deviation)
-    and plots them on side-by-side images.
+    Filters matches based on the rectified stereo constraint (y-axis deviation).
 
-    :param img_left: Left image
-    :param img_right: Right image
-    :param matches: List of original matches
+    :param matches: List of original matches from BFMatcher
     :param kp_left: List of keypoints in the left image
     :param kp_right: List of keypoints in the right image
-    :param title: Title of the plot
+    :param y_threshold: Maximum allowed vertical pixel deviation
     :return: inliers (accepted), outliers (rejected)
     """
     inliers = []
     outliers = []
 
     for match in matches:
-        ind_left = match.queryIdx
-        ind_right = match.trainIdx
+        # קבלת הקואורדינטות (x, y) של הנקודות שהותאמו
+        pt_left = kp_left[match.queryIdx].pt
+        pt_right = kp_right[match.trainIdx].pt
 
-        if abs(kp_left[ind_left].pt[1] - kp_right[ind_right].pt[1]) <= 2:
+        # חישוב ההפרש בציר ה-y
+        y_diff = abs(pt_left[1] - pt_right[1])
+
+        if y_diff <= y_threshold:
             inliers.append(match)
         else:
             outliers.append(match)
 
-    print(f'Number of accepted matches (inliers): {len(inliers)}')
-    print(f'Number of discarded matches (outliers): {len(outliers)}')
-
-    plt.figure(figsize=(15, 5))
-
-    # horizontal allingment the two pictures
-    combined_image = np.hstack((img_left, img_right))
-    plt.imshow(combined_image, cmap='gray')
-
-    offset_x = img_left.shape[1]
-
-    # outliers in cyan
-    for match in outliers:
-        ind_left = match.queryIdx
-        ind_right = match.trainIdx
-        x1, y1 = kp_left[ind_left].pt
-        x2, y2 = kp_right[ind_right].pt
-        x2 += offset_x
-
-        plt.scatter(x1, y1, color='cyan', s=3)
-        plt.scatter(x2, y2, color='cyan', s=3)
-        # אופציונלי: לצייר קו מחבר ביניהן (עוזר להמחיש את הסטייה)
-        # plt.plot([x1, x2], [y1, y2], color='cyan', linewidth=0.2, alpha=0.5)
-
-    #inliners in orange
-    for match in inliers:
-        ind_left = match.queryIdx
-        ind_right = match.trainIdx
-        x1, y1 = kp_left[ind_left].pt
-        x2, y2 = kp_right[ind_right].pt
-        x2 += offset_x
-
-        plt.scatter(x1, y1, color='orange', s=3)
-        plt.scatter(x2, y2, color='orange', s=3)
-
-    plt.title(title)
-    plt.axis('off')
-    plt.show()
-
     return inliers, outliers
 
+
+def plot_rectified_matches(img_left, img_right, kp_left, kp_right, inliers, outliers,
+                           title="Rectified Stereo Pattern Rejection"):
+    """
+    Plots the inliers and outliers on side-by-side images.
+    """
+    img_inliers = cv2.drawMatches(img_left, kp_left, img_right, kp_right, inliers, None,
+                                  matchColor=(0, 255, 0), flags=2)
+
+    img_outliers = cv2.drawMatches(img_left, kp_left, img_right, kp_right, outliers, None,
+                                   matchColor=(255, 0, 0), flags=2)
+
+    plt.figure(figsize=(20, 10))
+
+    plt.subplot(2, 1, 1)
+    plt.imshow(img_inliers)
+    plt.title(f"{title} - Inliers ({len(inliers)} matches)")
+    plt.axis('off')
+
+    plt.subplot(2, 1, 2)
+    plt.imshow(img_outliers)
+    plt.title(f"{title} - Outliers ({len(outliers)} matches)")
+    plt.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+
 def main_2_2():
-    left_img, right_img, left_kp, right_kp, matches = read_and_extract_matches(0)
-    inliers, outliers = filter_and_plot_rectified_matches(left_img, right_img,matches,left_kp, right_kp)
+    left_img, right_img, left_kp, right_kp, _,_,matches = read_and_extract_matches(0)
+
+    inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp)
+
+    plot_rectified_matches(left_img, right_img, left_kp, right_kp, inliers, outliers)
+
     return inliers, outliers
 
 
@@ -320,14 +313,15 @@ def main_2_4():
     for i in images_index:
         print(f"\nProcessing image pair {i}...")
 
-        img_left, img_right, kp_left, kp_right, matches = read_and_extract_matches(i)
+        left_img, right_img, left_kp, right_kp, _,_,matches = read_and_extract_matches(i)
 
-        inliers, outliers = filter_and_plot_rectified_matches(
-            img_left, img_right, matches, kp_left, kp_right,
+        inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp)
+        plot_rectified_matches(
+            left_img, right_img, left_kp, right_kp, inliers, outliers,
             title=f"Rectified Matches for image {i}"
         )
 
-        x_3d = triangulate_matched_points(P, Q, inliers, kp_left, kp_right)
+        x_3d = triangulate_matched_points(P, Q, inliers, left_kp, right_kp)
         plot3d_points(x_3d, title=f"3D Triangulated points for image {i}")
         plt.show()
 
