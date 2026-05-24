@@ -107,7 +107,7 @@ def main_2_1():
 ######## 2.2 #######
 
 
-def filter_rectified_matches(matches, kp_left, kp_right, y_threshold=2.0):
+def filter_rectified_matches(matches, kp_left, kp_right, y_threshold=2.0, min_disparity=2.0):
     """
     Filters matches based on the rectified stereo constraint (y-axis deviation).
 
@@ -125,10 +125,16 @@ def filter_rectified_matches(matches, kp_left, kp_right, y_threshold=2.0):
         pt_left = kp_left[match.queryIdx].pt
         pt_right = kp_right[match.trainIdx].pt
 
-        # חישוב ההפרש בציר ה-y
+        # 1. סינון ציר ה-Y (חייב להיות על אותו אפיפולר ליין)
         y_diff = abs(pt_left[1] - pt_right[1])
 
-        if y_diff <= y_threshold:
+        # 2. סינון ציר ה-X של המרצה (Disparity)
+        x_left = pt_left[0]
+        x_right = pt_right[0]
+        disparity = x_left - x_right
+
+        # התנאי המשולב: פער ה-Y קטן מ-2, וה-x השמאלי גדול מה-x הימני בלפחות 2 פיקסלים!
+        if y_diff <= y_threshold and disparity > min_disparity:
             inliers.append(match)
         else:
             outliers.append(match)
