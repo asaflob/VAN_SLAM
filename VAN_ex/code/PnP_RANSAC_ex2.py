@@ -2,7 +2,6 @@ from geometric_outline_rejection_ex1 import *
 import math
 import time
 from tqdm import tqdm
-
 #def read_and_extract_matches(index=0)
 #return left_img, right_img, left_kp, right_kp, left_desc, desc_right,matches
 
@@ -55,7 +54,7 @@ def process_single_point_cloud(index):
     #
     triangulate_points = cv_triangulate_matched_points(inliers, left_kp, right_kp, P, Q)
 
-    return left_img, left_kp, left_desc, inliers, triangulate_points, right_kp
+    return left_img, left_kp, left_desc, inliers, triangulate_points, right_kp, matches
 
 def main_3_1():
     print("doing 3_1")
