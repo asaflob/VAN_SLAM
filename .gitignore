@@ -1,1 +1,17 @@
+# --- Existing ---
 VAN_ex/dataset/
+
+# --- IDEs and Editors ---
+.idea/
+
+# --- Python ---
+__pycache__/
+*.pyc
+
+# --- Local Logs & Data ---
+VAN_ex/code/depth_debug.txt
+VAN_ex/code/movement_log.csv
+*.pkl
+
+# --- Temporary Word Files ---
+~$*.docx
