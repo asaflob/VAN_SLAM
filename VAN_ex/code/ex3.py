@@ -1,4 +1,4 @@
-from geometric_outline_rejection_ex1 import *
+from ex2 import *
 import math
 import time
 from tqdm import tqdm
@@ -49,7 +49,7 @@ def process_single_point_cloud(index):
     left_img, right_img, left_kp, right_kp, left_desc, desc_right, matches = read_and_extract_matches(index)
 
     #the inliers and outliers after filter
-    inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp)
+    inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp, y_threshold=2.0)
 
     #
     triangulate_points = cv_triangulate_matched_points(inliers, left_kp, right_kp, P, Q)
@@ -60,10 +60,10 @@ def main_3_1():
     print("doing 3_1")
 
     #for the pair (left_0, right_0)
-    left_img_0, left_kp_0, left_desc_0, inliers_0, triangulate_points_0, right_kp_0 = process_single_point_cloud(0)
+    left_img_0, left_kp_0, left_desc_0, inliers_0, triangulate_points_0, right_kp_0, _ = process_single_point_cloud(0)
 
     #for the pair (left_1, right_1)
-    left_img_1, left_kp_1, left_desc_1, inliers_1, triangulate_points_1, right_kp_1 = process_single_point_cloud(1)
+    left_img_1, left_kp_1, left_desc_1, inliers_1, triangulate_points_1, right_kp_1, _ = process_single_point_cloud(1)
 
     print(f"Generated 3D point cloud for pair 0 with {len(triangulate_points_0)} points.")
     print(f"Generated 3D point cloud for pair 1 with {len(triangulate_points_1)} points.")
@@ -584,13 +584,13 @@ def track_full_sequence(sequence_dir, K, P, Q, log_filename="movement_log.csv", 
         log_file.write("Frame,Distance_Meters,Status\n")
 
         # 2. Initialization: Process the very first frame (Frame 0) outside the loop
-        prev_left_img, prev_left_kp, prev_left_desc, prev_inliers, prev_points_3d, prev_right_kp = process_single_point_cloud(
+        prev_left_img, prev_left_kp, prev_left_desc, prev_inliers, prev_points_3d, prev_right_kp,_ = process_single_point_cloud(
             0)
 
         # 3. Main Tracking Loop (From frame 1 to the end)
         for i in tqdm(range(1, num_frames), desc="Tracking Progress", unit="frame"):
             # A. Process the current frame
-            curr_left_img, curr_left_kp, curr_left_desc, curr_inliers, curr_points_3d, curr_right_kp = process_single_point_cloud(
+            curr_left_img, curr_left_kp, curr_left_desc, curr_inliers, curr_points_3d, curr_right_kp,_ = process_single_point_cloud(
                 i)
 
             # B. Match features over time
@@ -806,63 +806,63 @@ def plot_only_ground_truth(gt_poses):
     plt.show()
 ############################3##3
 if __name__ == '__main__':
-    sequence_dir = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex\dataset\dataset_2026\sequences\00"
-
-    estimated_relative_transforms, total_time = track_full_sequence(sequence_dir, K, P, Q)
-
-    gt_file_path = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex\dataset\dataset_2026\poses\00.txt"
-    ground_truth_poses = read_ground_truth(gt_file_path)
-
-    estimated_global_poses = calculate_global_poses(estimated_relative_transforms)
-
-    ground_truth_poses_cropped = ground_truth_poses[:len(estimated_global_poses)]
-
-    plot_final_trajectories(estimated_global_poses, ground_truth_poses_cropped)
+    # sequence_dir = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex\dataset\dataset_2026\sequences\00"
+    #
+    # estimated_relative_transforms, total_time = track_full_sequence(sequence_dir, K, P, Q)
+    #
+    # gt_file_path = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex\dataset\dataset_2026\poses\00.txt"
+    # ground_truth_poses = read_ground_truth(gt_file_path)
+    #
+    # estimated_global_poses = calculate_global_poses(estimated_relative_transforms)
+    #
+    # ground_truth_poses_cropped = ground_truth_poses[:len(estimated_global_poses)]
+    #
+    # plot_final_trajectories(estimated_global_poses, ground_truth_poses_cropped)
 
 
 
     # --- סעיף 3.1: יצירת ענני הנקודות ---
     # (הפונקציה שכבר כתבת שעושה את העבודה לזוג 0 ולזוג 1)
-    # left_img_0, left_kp_0, left_desc_0, triangulate_points_0, inliers_0, right_kp_0, \
-    #     left_img_1, left_kp_1, left_desc_1, triangulate_points_1, inliers_1, right_kp_1 = main_3_1()
-    #
-    # # --- סעיף 3.2: מציאת התאמות בזמן (מ-left0 ל-left1) ---
-    # temporal_matches = left_matches(left_desc_0, left_desc_1)
-    #
-    # # --- סעיף 3.3: מציאת מיקום המצלמה (PnP) ---
-    # print("\n--- Starting Exercise 3.3: PnP ---")
-    #
-    # obj_points_3d, img_points_2d = get_pnp_data(inliers_0, temporal_matches, triangulate_points_0, left_kp_1)
-    #
-    # if len(obj_points_3d) >= 4:
-    #     R, t, Rt_matrix = calculate_pnp(obj_points_3d, img_points_2d, K)
-    #     plot_cameras_top_down(R, t)
-    #
-    #     print("\n--- Starting Exercise 3.4: Finding Supporters ---")
-    #
-    #     # הרצת הפונקציה לבדיקת התומכים מתוך כל ההתאמות
-    #     supporters, _ = matches_and_supports(inliers_0, temporal_matches, inliers_1, triangulate_points_0,
-    #                                          left_kp_0, right_kp_0, left_kp_1, right_kp_1,
-    #                                          P, Q, R, t, threshold=2.0)
-    #
-    #     # הדפסת התמונה המבוקשת עם הצבעים המבדילים
-    #     plot_supporters(left_img_0, left_kp_0, left_img_1, left_kp_1, temporal_matches, supporters)
-    #
-    #     best_R, best_t, best_supporters = RANSAC(inliers_0, temporal_matches, inliers_1, triangulate_points_0,
-    #                                              left_kp_0, right_kp_0, left_kp_1, right_kp_1,
-    #                                              P, Q, K, obj_points_3d, img_points_2d,
-    #                                              p=0.99, threshold=2.0)
-    #
-    #     R_refined, t_refined, T_refined = calc_the_transformations_to_RANSAC_inliers(
-    #         best_supporters, inliers_0, triangulate_points_0, left_kp_1, K
-    #     )
-    #
-    #     if T_refined is not None:
-    #         plot_3D_points_cloud_to_RANSAC(triangulate_points_0, triangulate_points_1, T_refined)
-    #
-    #         plot_left0_left1_inliers_outliers(
-    #             left_img_0, left_kp_0, left_img_1, left_kp_1,
-    #             temporal_matches, best_supporters
-    #         )
-    # else:
-    #     print("Not enough points found to run PnP! Need at least 4.")
+    left_img_0, left_kp_0, left_desc_0, triangulate_points_0, inliers_0, right_kp_0, \
+        left_img_1, left_kp_1, left_desc_1, triangulate_points_1, inliers_1, right_kp_1 = main_3_1()
+
+    # --- סעיף 3.2: מציאת התאמות בזמן (מ-left0 ל-left1) ---
+    temporal_matches = left_matches(left_desc_0, left_desc_1)
+
+    # --- סעיף 3.3: מציאת מיקום המצלמה (PnP) ---
+    print("\n--- Starting Exercise 3.3: PnP ---")
+
+    obj_points_3d, img_points_2d = get_pnp_data(inliers_0, temporal_matches, triangulate_points_0, left_kp_1)
+
+    if len(obj_points_3d) >= 4:
+        R, t, Rt_matrix = calculate_pnp(obj_points_3d, img_points_2d, K)
+        plot_cameras_top_down(R, t)
+
+        print("\n--- Starting Exercise 3.4: Finding Supporters ---")
+
+        # הרצת הפונקציה לבדיקת התומכים מתוך כל ההתאמות
+        supporters, _ = matches_and_supports(inliers_0, temporal_matches, inliers_1, triangulate_points_0,
+                                             left_kp_0, right_kp_0, left_kp_1, right_kp_1,
+                                             P, Q, R, t, threshold=2.0)
+
+        # הדפסת התמונה המבוקשת עם הצבעים המבדילים
+        plot_supporters(left_img_0, left_kp_0, left_img_1, left_kp_1, temporal_matches, supporters)
+
+        best_R, best_t, best_supporters = RANSAC(inliers_0, temporal_matches, inliers_1, triangulate_points_0,
+                                                 left_kp_0, right_kp_0, left_kp_1, right_kp_1,
+                                                 P, Q, K, obj_points_3d, img_points_2d,
+                                                 p=0.99, threshold=2.0)
+
+        R_refined, t_refined, T_refined = calc_the_transformations_to_RANSAC_inliers(
+            best_supporters, inliers_0, triangulate_points_0, left_kp_1, K
+        )
+
+        if T_refined is not None:
+            plot_3D_points_cloud_to_RANSAC(triangulate_points_0, triangulate_points_1, T_refined)
+
+            plot_left0_left1_inliers_outliers(
+                left_img_0, left_kp_0, left_img_1, left_kp_1,
+                temporal_matches, best_supporters
+            )
+    else:
+        print("Not enough points found to run PnP! Need at least 4.")

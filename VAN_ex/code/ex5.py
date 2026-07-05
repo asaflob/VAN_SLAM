@@ -5,7 +5,17 @@ import matplotlib.pyplot as plt
 import cv2
 from ex4 import *
 
-def q5_1(db, poses_path, K, P, Q):
+
+def invert_se3(T):
+    R = T[:3, :3]
+    t = T[:3, 3]
+    T_inv = np.eye(4)
+    T_inv[:3, :3] = R.T
+    T_inv[:3, 3] = -R.T @ t
+    return T_inv
+
+
+def q5_1(db, poses, K, P, Q):
     # 1. Find a random track of length >= 10
     target_track = None
     for track_id, frames in db.trackId_to_frames.items():
@@ -22,7 +32,7 @@ def q5_1(db, poses_path, K, P, Q):
 
     # Load global poses (Assuming these are Camera-to-World based on ex4 code)
     # If your poses are World-to-Camera, you'll need to invert them using np.linalg.inv()
-    poses = load_kitti_poses(poses_path)
+    # poses = load_kitti_poses(poses_path)
 
     # 2. Extract intrinsics and baseline for GTSAM
     fx, fy = K[0, 0], K[1, 1]
@@ -41,10 +51,9 @@ def q5_1(db, poses_path, K, P, Q):
         T_wc = poses[frame_id]  # Assuming Camera-to-World
 
         # Extract R, t to create gtsam.Pose3
-        R_wc = T_wc[:3, :3]
-        t_wc = T_wc[:3, 3]
-
-        pose3 = gtsam.Pose3(gtsam.Rot3(R_wc), gtsam.Point3(t_wc))
+        R_cw = T_wc[:3, :3].T
+        t_cw = -R_cw @ T_wc[:3, 3]
+        pose3 = gtsam.Pose3(gtsam.Rot3(R_cw), gtsam.Point3(t_cw))
         stereo_cameras[frame_id] = gtsam.StereoCamera(pose3, stereo_calib)
 
     # 3. Triangulate the 3D point from the last frame
@@ -59,7 +68,7 @@ def q5_1(db, poses_path, K, P, Q):
     point3d_global = last_camera.backproject(stereo_pt_last)
 
     # 4. Define noise model for Factor
-    sigma = 1.0
+    sigma = 2.0
     noise_model = gtsam.noiseModel.Isotropic.Sigma(3, sigma)
 
     # Symbols for dummy Values object (required to evaluate factor error)
@@ -120,8 +129,7 @@ def q5_1(db, poses_path, K, P, Q):
     plt.tight_layout()
     plt.show()
 
-
-def get_keyframe(poses, start_frame, min_frames=5, max_frames=20, min_dist=2.0):
+def get_keyframe(poses, start_frame, min_frames=10, max_frames=20, min_dist=4.0):
     dist_accumulated = 0.0
     for i in range(start_frame, min(start_frame + max_frames, len(poses) - 1)):
         # Calculate distance between consecutive frames
@@ -136,68 +144,7 @@ def get_keyframe(poses, start_frame, min_frames=5, max_frames=20, min_dist=2.0):
     return min(start_frame + max_frames, len(poses) - 1)
 
 
-# def build_bundle_graph(db, poses, window_frames, K, P, Q):
-#     # Calibration
-#     fx, fy = K[0, 0], K[1, 1]
-#     cx, cy = K[0, 2], K[1, 2]
-#     baseline = -Q[0, 3] / fx
-#     stereo_calib = gtsam.Cal3_S2Stereo(fx, fy, 0.0, cx, cy, baseline)
-#
-#     graph = gtsam.NonlinearFactorGraph()
-#     initial_estimate = gtsam.Values()
-#
-#     pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.01, 0.01, 0.01, 0.01, 0.01, 0.01]))
-#     measurement_noise = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
-#
-#     start_frame = window_frames[0]
-#     T_ref_inv = np.linalg.inv(poses[start_frame])
-#     stereo_cameras = {}
-#
-#     # Initialize Poses
-#     for f in window_frames:
-#         T_local = T_ref_inv @ poses[f]
-#         R_local, t_local = T_local[:3, :3], T_local[:3, 3]
-#
-#         pose3 = gtsam.Pose3(gtsam.Rot3(R_local), gtsam.Point3(t_local))
-#         sym_x = gtsam.symbol('x', f)
-#         initial_estimate.insert(sym_x, pose3)
-#         stereo_cameras[f] = gtsam.StereoCamera(pose3, stereo_calib)
-#
-#         if f == start_frame:
-#             graph.add(gtsam.PriorFactorPose3(sym_x, pose3, pose_noise))
-#
-#     # Initialize Landmarks and add Projection Factors
-#     tracks_in_window = set()
-#     for f in window_frames:
-#         tracks_in_window.update(db.tracks(f))
-#
-#     for t_id in tracks_in_window:
-#         track_frms = [f for f in window_frames if f in db.frames(t_id)]
-#         if len(track_frms) < 2:
-#             continue
-#
-#         sym_l = gtsam.symbol('l', t_id)
-#
-#         # Triangulate
-#         if not initial_estimate.exists(sym_l):
-#             first_f = track_frms[0]
-#             link = db.link(first_f, t_id)
-#             stereo_pt = gtsam.StereoPoint2(link.x_left, link.x_right, link.y)
-#             point3d = stereo_cameras[first_f].backproject(stereo_pt)
-#             initial_estimate.insert(sym_l, point3d)
-#
-#         # Add factors
-#         for f in track_frms:
-#             link = db.link(f, t_id)
-#             measured_pt = gtsam.StereoPoint2(link.x_left, link.x_right, link.y)
-#             sym_x = gtsam.symbol('x', f)
-#             factor = gtsam.GenericStereoFactor3D(measured_pt, measurement_noise, sym_x, sym_l, stereo_calib)
-#             graph.add(factor)
-#
-#     return graph, initial_estimate, stereo_calib
-
 def build_bundle_graph(db, poses, window_frames, K, P, Q):
-    # Calibration
     fx, fy = K[0, 0], K[1, 1]
     cx, cy = K[0, 2], K[1, 2]
     baseline = -Q[0, 3] / fx
@@ -207,88 +154,61 @@ def build_bundle_graph(db, poses, window_frames, K, P, Q):
     initial_estimate = gtsam.Values()
 
     start_frame = window_frames[0]
-    T_ref_inv = np.linalg.inv(poses[start_frame])
+    T_ref = np.eye(4)
+    T_ref[:3, :] = poses[start_frame][:3, :]
 
-    pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.01] * 6))
-    measurement_noise = gtsam.noiseModel.Isotropic.Sigma(3, 1.0)
+    pose_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([0.001] * 6))
+    base_measurement_noise = gtsam.noiseModel.Isotropic.Sigma(3, 2.0)
+    robust_noise = gtsam.noiseModel.Robust.Create(gtsam.noiseModel.mEstimator.Huber.Create(1.345),
+                                                  base_measurement_noise)
 
-    # הכנת המצלמות
     temp_poses = {}
     for f in window_frames:
-        T_local = T_ref_inv @ poses[f]
+        T_f_inv = invert_se3(poses[f])
+        T_local = T_ref @ T_f_inv
         temp_poses[f] = gtsam.Pose3(gtsam.Rot3(T_local[:3, :3]), gtsam.Point3(T_local[:3, 3]))
 
-    # הוספת Prior למצלמה הראשונה
+    # חייבים להכניס את הפריים הראשון ואת עוגן ה-Prior שלו
     sym_start = gtsam.symbol('x', start_frame)
     initial_estimate.insert(sym_start, temp_poses[start_frame])
     graph.add(gtsam.PriorFactorPose3(sym_start, temp_poses[start_frame], pose_noise))
 
-    # הוספת פקטורים ונקודות
     tracks_in_window = set()
     for f in window_frames:
         tracks_in_window.update(db.tracks(f))
 
     for t_id in tracks_in_window:
         track_frms = [f for f in window_frames if f in db.frames(t_id)]
-        if len(track_frms) < 2: continue
+        if len(track_frms) < 2:
+            continue
 
         first_f = track_frms[0]
         link_first = db.link(first_f, t_id)
-        disparity = link_first.x_left - link_first.x_right
 
-        # סינון 1: נקודות קרובות לאינסוף (מה שזיהית קודם!)
-        if disparity < 2.0:
-            continue
-
-        # טריאנגולציה
         cam_first = gtsam.StereoCamera(temp_poses[first_f], stereo_calib)
         pt3d = cam_first.backproject(gtsam.StereoPoint2(link_first.x_left, link_first.x_right, link_first.y))
 
-        # --- התיקון החדש: Sanity Check (ה"וייב של RANSAC") ---
-        # נבדוק אם הנקודה הזו מייצרת אומדן מטורף באחד הפריימים האחרים
-        is_outlier = False
-        for f in track_frms:
-            cam_f = gtsam.StereoCamera(temp_poses[f], stereo_calib)
-            try:
-                # מטילים את הנקודה התלת-מימדית למצלמה בפריים f
-                proj = cam_f.project(pt3d)
-                link_f = db.link(f, t_id)
-
-                # מחשבים שגיאת פיקסלים (אוקלידית) בין ההטלה למדידה
-                dist = np.sqrt((proj.uL() - link_f.x_left) ** 2 +
-                               (proj.uR() - link_f.x_right) ** 2 +
-                               (proj.v() - link_f.y) ** 2)
-
-                # אם השגיאה הראשונית גדולה מ-25 פיקסלים, זה אאוטלייר מסוכן!
-                if dist > 25.0:
-                    is_outlier = True
-                    break
-            except Exception:
-                # מתרחש אם הנקודה נופלת מאחורי המצלמה (Cheirality Exception)
-                is_outlier = True
-                break
-
-        if is_outlier:
-            continue  # מסננים וזורקים את ה-Track הרעיל!
-        # ----------------------------------------------------
+        if pt3d[2] < 0.5 or pt3d[2] > 100.0:
+            continue
 
         sym_l = gtsam.symbol('l', t_id)
-
-        # הכנסה ל-Values
         if not initial_estimate.exists(sym_l):
             initial_estimate.insert(sym_l, pt3d)
 
-        # הוספת פקטורים
         for f in track_frms:
             sym_x = gtsam.symbol('x', f)
+
+            # --- התיקון המרכזי ---
+            # נוסיף את המצלמה ל-Initial Estimate רק אם היא קיימת בטראק תקין
             if not initial_estimate.exists(sym_x):
                 initial_estimate.insert(sym_x, temp_poses[f])
 
             link = db.link(f, t_id)
             meas = gtsam.StereoPoint2(link.x_left, link.x_right, link.y)
-            graph.add(gtsam.GenericStereoFactor3D(meas, measurement_noise, sym_x, sym_l, stereo_calib))
+            graph.add(gtsam.GenericStereoFactor3D(meas, robust_noise, sym_x, sym_l, stereo_calib))
 
     return graph, initial_estimate, stereo_calib
+
 
 def find_worst_projection_factor(graph, values):
     max_err = -1
@@ -349,9 +269,8 @@ def plot_factor_projections(values, stereo_calib, frame_c, point_q, sym_x, sym_l
     plt.suptitle(f"{title_prefix} - Frame {frame_c}, Track {point_q}\nErrors: L={dist_L:.2f}px, R={dist_R:.2f}px")
     plt.show()
 
-
 def plot_trajectory_and_landmarks(result, window_frames):
-    import gtsam
+    # import gtsam
     fig = plt.figure(figsize=(15, 6))
 
     ax2d = fig.add_subplot(121)
@@ -394,8 +313,9 @@ def plot_trajectory_and_landmarks(result, window_frames):
     plt.tight_layout()
     plt.show()
 
-def q5_3(db, poses_path, left_images_dir, right_images_dir, K, P, Q):
-    poses = load_kitti_poses(poses_path)
+
+def q5_3(db, poses, left_images_dir, right_images_dir, K, P, Q):
+    # poses = load_kitti_poses(poses_path)
     start_frame = 0
     end_frame = get_keyframe(poses, start_frame)
     window_frames = list(range(start_frame, end_frame + 1))
@@ -432,32 +352,34 @@ def q5_3(db, poses_path, left_images_dir, right_images_dir, K, P, Q):
     plot_trajectory_and_landmarks(result, window_frames)
 
 
-def align_trajectories(est, gt):
-    est_mean = est.mean(axis=0)
-    gt_mean = gt.mean(axis=0)
+def run_window_bundle_adjustment(db, poses, start_frame, end_frame, K, P, Q):
+    """
+    Builds and optimizes a bundle graph for a specific window of frames.
 
-    est_centered = est - est_mean
-    gt_centered = gt - gt_mean
+    Args:
+        db, poses, K, P, Q: Same as before.
+        start_frame (int): The index of the first frame in the window (c0).
+        end_frame (int): The index of the last frame in the window (ck).
 
-    H = est_centered.T @ gt_centered
-    U, S, Vt = np.linalg.svd(H)
-    R = Vt.T @ U.T
+    Returns:
+        tuple: (graph, result)
+    """
+    window_frames = list(range(start_frame, end_frame + 1))
 
-    if np.linalg.det(R) < 0:
-        Vt_modified = Vt.copy()
-        Vt_modified[2, :] *= -1
-        R = Vt_modified.T @ U.T
+    graph, initial_estimate, stereo_calib = build_bundle_graph(db, poses, window_frames, K, P, Q)
 
-    return (est_centered @ R.T) + gt_mean
+    optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial_estimate)
+    result = optimizer.optimize()
 
-def q5_4(db, poses_path, ground_truth_path, K, P, Q):
-    poses = load_kitti_poses(poses_path)
+    return graph, result
+
+def q5_4(db, poses, ground_truth_path, K, P, Q):
+    # poses = load_kitti_poses(poses_path)
     gt_poses = load_kitti_poses(ground_truth_path)
 
     current_start = 0
-    global_trajectory = [poses[0]]
+    all_optimized_poses = {0: poses[0]}  # מילון ששומר פוזה גלובלית לכל פריים
     keyframes_indices = [0]
-    all_optimized_poses = {0: poses[0]}
 
     print("--- Starting Global Bundle Adjustment ---")
 
@@ -465,112 +387,156 @@ def q5_4(db, poses_path, ground_truth_path, K, P, Q):
         end = get_keyframe(poses, current_start)
         window = list(range(current_start, end + 1))
 
+        # בונים גרף
         graph, initial, calib = build_bundle_graph(db, poses, window, K, P, Q)
 
-        # בדיקה שהגרף לא ריק
         if graph.size() == 0:
+            # ---> הגיבוי הקריטי הראשון <---
+            for f in window:
+                if f not in all_optimized_poses:
+                    all_optimized_poses[f] = poses[f]
             current_start = end
+            keyframes_indices.append(current_start)
             continue
 
         optimizer = gtsam.LevenbergMarquardtOptimizer(graph, initial)
         result = optimizer.optimize()
 
-        # תיקון: מציאת ה-Prior האמיתי בגרף במקום להניח שהוא תמיד ב-0
+        # הדפסת שגיאת פקטור העוגן (עבור הדו"ח)
         prior_error = 0.0
         for i in range(graph.size()):
             if isinstance(graph.at(i), gtsam.PriorFactorPose3):
                 prior_error = graph.at(i).error(result)
                 break
-        print(f"Window {current_start}-{end}: Anchoring factor error = {prior_error:.6f}")
 
-        # תיקון: גישה בטוחה ל-Result
-        sym_end = gtsam.symbol('x', end)
-        if result.exists(sym_end):
-            T_next_local = result.atPose3(sym_end).matrix()
-            T_prev_global = global_trajectory[-1]
-            T_next_global = T_prev_global @ T_next_local
-            global_trajectory.append(T_next_global)
-            all_optimized_poses[end] = T_next_global
-        else:
-            # אם הפריים לא באופטימיזציה, נשתמש במיקום המקורי כגיבוי
-            print(f"Warning: Frame {end} not in optimization result, using PnP estimate.")
-            all_optimized_poses[end] = global_trajectory[-1] @ np.linalg.inv(poses[current_start]) @ poses[end]
-            global_trajectory.append(all_optimized_poses[end])
+        # נדפיס רק עבור חלונות אחרונים או לפי צורך
+        if current_start > len(poses) - 50:
+            print(f"Window {current_start}-{end}: Anchoring factor error = {prior_error}")
+
+        T_start_global = np.eye(4)
+        T_start_global[:3, :] = all_optimized_poses[current_start][:3, :]
+
+        for f in window:
+            sym = gtsam.symbol('x', f)
+            if result.exists(sym):
+                pose_local = result.atPose3(sym).matrix()
+                pose_local_inv = invert_se3(pose_local)
+                T_f_global = pose_local_inv @ T_start_global
+
+                all_optimized_poses[f] = T_f_global
+                # poses[f] = T_f_global
+            else:
+                if f not in all_optimized_poses:
+                    T_local_pnp = poses[current_start] @ invert_se3(poses[f])
+                    all_optimized_poses[f] = invert_se3(T_local_pnp) @ T_start_global
 
         current_start = end
         keyframes_indices.append(current_start)
 
-    # 4. הדפסת המיקום של הפריים הראשון בחלון האחרון
-    print(f"\nLast bundle window start frame ({keyframes_indices[-2]}) global position:\n",
-          all_optimized_poses[keyframes_indices[-2]][:3, 3])
+    # --- הדרישה לדו"ח: מיקום הפריים הראשון של החלון האחרון ---
+    last_start_frame = keyframes_indices[-2] if len(keyframes_indices) > 1 else keyframes_indices[0]
+    T_last_window_start = all_optimized_poses[last_start_frame]
+    R_last = T_last_window_start[:3, :3]
+    t_last = T_last_window_start[:3, 3]
+    position_last = -R_last.T @ t_last
+    print(f"\nFinal position of the first frame of the last bundle (Frame {last_start_frame}):")
+    print(f"[X: {position_last[0]:.6f}, Y: {position_last[1]:.6f}, Z: {position_last[2]:.6f}]")
 
-    errors = []
-    times = keyframes_indices
-    est_positions = np.array([all_optimized_poses[i][:3, 3] for i in keyframes_indices])
-    gt_positions = np.array([gt_poses[i][:3, 3] for i in keyframes_indices])
+    # --- יצירת גרפים וניתוח ---
+    est_positions = []
+    gt_positions = []
 
-    est_positions_aligned = align_trajectories(est_positions, gt_positions)
+    for i in keyframes_indices:
+        T_est = all_optimized_poses[i]
+        C_est = -T_est[:3, :3].T @ T_est[:3, 3]
+        est_positions.append(C_est)
 
-    errors = np.linalg.norm(est_positions - gt_positions, axis=1)
+        T_gt = gt_poses[i]
+        C_gt = -T_gt[:3, :3].T @ T_gt[:3, 3]
+        gt_positions.append(C_gt)
 
-    plt.figure()
-    plt.plot(times, errors, marker='o')
-    plt.title("Keyframe Localization Error")
-    plt.xlabel("Frame Index")
-    plt.ylabel("Euclidean Error (m)")
+    est_positions = np.array(est_positions)
+    gt_positions = np.array(gt_positions)
+
+    # --- מחיקת השורה של align_trajectories! ---
+
+    # --- הצגת מפה גלובלית 2D ---
+    plt.figure(figsize=(10, 8))
+    # מציירים ישירות את הקואורדינטות של X ו-Z מה-Ground Truth
+    plt.plot(gt_positions[:, 0], gt_positions[:, 2], 'k--', label='Ground Truth', linewidth=2)
+    # מציירים ישירות את האומדן שלנו
+    plt.plot(est_positions[:, 0], est_positions[:, 2], 'b-', label='Estimated Trajectory', linewidth=2)
+
+    # סימון נקודת ההתחלה
+    plt.scatter(est_positions[0, 0], est_positions[0, 2], c='red', marker='*', s=200, label='Start (0,0)', zorder=5)
+
+    plt.title("Trajectory: Estimated vs Ground Truth (Top-Down View)")
+    plt.xlabel("X (Right/Left) [meters]")
+    plt.ylabel("Z (Forward Depth) [meters]")
+    plt.legend()
+    plt.axis('equal')
+    plt.grid(True)
     plt.show()
 
-    plt.figure()
-    plt.plot(est_positions_aligned[:, 0], est_positions_aligned[:, 2], 'r-o', label='Estimated')
-    plt.plot(gt_positions[:, 0], gt_positions[:, 2], 'b-o', label='Ground Truth')
-    plt.title("Trajectory: Estimated vs Ground Truth (X-Z Plane)")
-    plt.legend()
+    # --- הצגת שגיאת לוקליזציה אוקלידית לאורך זמן ---
+    euclidean_errors = np.linalg.norm(est_positions[:, [0, 2]] - gt_positions[:, [0, 2]], axis=1)
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(keyframes_indices, euclidean_errors, 'm-o', markersize=4)
+    plt.title("Keyframe Localization Error (Euclidean distance)")
+    plt.xlabel("Keyframe ID")
+    plt.ylabel("Euclidean Translation Error [meters]")
+    plt.grid(True)
     plt.show()
 
 
 if __name__ == '__main__':
     project_root = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex"
     sequence_dir = os.path.join(project_root, 'dataset', 'dataset_2026', 'sequences', '00')
+    poses_dir = os.path.join(project_root, 'dataset', 'dataset_2026', 'poses')
+    ground_truth_path = os.path.join(poses_dir, '00.txt')
 
     left_images_dir = os.path.join(sequence_dir, 'image_0')
+    right_images_dir = os.path.join(sequence_dir, 'image_1')
+
     db = TrackingDB()
-    db_filename = 'my_tracking_data'
+    db_filename = 'my_tracking_data_ex4'
+    poses_npy_filename = 'my_estimated_poses_ex4.npy'
     K, M1, M2 = read_cameras()
     P, Q = K @ M1, K @ M2  # multiply by intrinsic camera matrix
     try:
         db.load(db_filename)
-        print("Data loaded successfully from file.")
-    except FileNotFoundError:
-        print("Data file not found. Running tracking sequence to generate data...")
+        # טוענים גם את הפוזות שהערכנו מתרגיל 4
+        estimated_poses = np.load(poses_npy_filename, allow_pickle=True)
+        # הפיכת מערך numpy לרשימה (כדי שיתאים לקוד שלך)
+        estimated_poses = list(estimated_poses)
+        print("Data and estimated poses loaded successfully from file.")
 
-        track_full_sequence_ex4(
+    except FileNotFoundError:
+        print("Data files not found. Running tracking sequence to generate data...")
+
+        all_T, _ = track_full_sequence_ex4(
             sequence_dir=sequence_dir,
             K=K, P=P, Q=Q,
-            db=db
-        )#, max_frames=10
+            db=db,
+            max_frames=None
+        )
         db.serialize(db_filename)
 
-    project_root = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex"
-    sequence_dir = os.path.join(project_root, 'dataset', 'dataset_2026', 'poses')
-    poses_path = os.path.join(sequence_dir,'00.txt')
+        # מחשבים את הפוזות הגלובליות מהטרנספורמציות היחסיות
+        estimated_poses = calculate_global_poses(all_T)
 
-    ###### 5.1 #######
-    # print("###### 5.1 #######")
-    # q5_1(db, poses_path, K, P, Q)
-    ###### end of 5.1 #######
+        np.save(poses_npy_filename, estimated_poses)
 
-    right_images_dir = os.path.join(sequence_dir, 'image_1')
+
+        ###### 5.1 #######
+    print("###### 5.1 #######")
+    q5_1(db, estimated_poses, K, P, Q)
 
     ###### 5.3 #######
-    # print("###### 5.3 #######")
-    # sequence_dir = os.path.join(project_root, 'dataset', 'dataset_2026', 'sequences', '00')
-    # left_images_dir = os.path.join(sequence_dir, 'image_0')
-    # right_images_dir = os.path.join(sequence_dir, 'image_1')
-    #
-    # q5_3(db, poses_path, left_images_dir, right_images_dir, K, P, Q)
-    ###### end of 5.3 #######
+    print("###### 5.3 #######")
+    q5_3(db, estimated_poses, left_images_dir, right_images_dir, K, P, Q)
 
-    ground_truth_path = r"C:\university\SHANA 5\semester B\67604-slam\VAN_SLAM\VAN_ex\dataset\dataset_2026\poses\00.txt"
+    ###### 5.4 #######
     print("###### 5.4 #######")
-    q5_4(db, poses_path, ground_truth_path, K, P, Q)
-    print("###### End of 5.4 #######")
+    q5_4(db, estimated_poses, ground_truth_path, K, P, Q)

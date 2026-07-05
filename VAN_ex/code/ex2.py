@@ -48,15 +48,38 @@ def read_cameras():
 K, M1, M2 = read_cameras()
 P, Q = K @ M1, K @ M2  # multiply by intrinsic camera matrix
 
+####### 2.1 #######
+
+
+def extract_features_shi_tomasi(img, feature_extractor, max_corners=4000, min_distance=7):
+    """
+    Extracts keypoints using Shi-Tomasi to ensure uniform distribution via minDistance,
+    then computes descriptors using the provided feature_extractor.
+    """
+    corners = cv2.goodFeaturesToTrack(img, maxCorners=max_corners, qualityLevel=0.01, minDistance=min_distance)
+
+    keypoints = []
+    if corners is not None:
+        for corner in corners:
+            x, y = corner.ravel()
+            keypoints.append(cv2.KeyPoint(x=float(x), y=float(y), size=20.0))
+
+    keypoints, descriptors = feature_extractor.compute(img, keypoints)
+
+    return keypoints, descriptors
+
 
 def read_and_extract_matches(index=0):
     left_img, right_img = read_images(index)
-    left_kp, left_desc = FEATURE.detectAndCompute(left_img, None)
-    right_kp, desc_right = FEATURE.detectAndCompute(right_img, None)
-    matches = MATCHER.match(left_desc, desc_right)
-    return left_img, right_img, left_kp, right_kp, left_desc, desc_right,matches
 
-####### 2.1 #######
+    left_kp, left_desc = extract_features_shi_tomasi(left_img, FEATURE)
+    right_kp, desc_right = extract_features_shi_tomasi(right_img, FEATURE)
+
+    matches = MATCHER.match(left_desc, desc_right)
+
+    return left_img, right_img, left_kp, right_kp, left_desc, desc_right, matches
+
+
 def analyze_rectified_pattern(left_kp, right_kp, matches, threshold=2.0):
     """
     Analyzes the y-coordinate deviations of matches in a rectified stereo pair.
@@ -169,10 +192,16 @@ def plot_rectified_matches(img_left, img_right, kp_left, kp_right, inliers, outl
     plt.show()
 
 
-def main_2_2():
-    left_img, right_img, left_kp, right_kp, _,_,matches = read_and_extract_matches(0)
+def main_2_2(left_img, right_img, left_kp, right_kp, matches, inliers, outliers):
+    total = len(matches)
+    rejected = len(outliers)
+    accepted = len(inliers)
 
-    inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp)
+    print("\n--- Match Filtering Stats ---")
+    print(f"Total Matches from Detector: {total}")
+    print(f"Accepted (Inliers): {accepted}")
+    print(f"Rejected (Outliers): {rejected}")
+    print("---------------------------\n")
 
     plot_rectified_matches(left_img, right_img, left_kp, right_kp, inliers, outliers)
 
@@ -332,12 +361,13 @@ def main_2_4():
         plt.show()
 
 if __name__ == '__main__':
-    # #2.1
-    # left_img, right_img, left_kp, right_kp, matches = read_and_extract_matches(0)
-    #
-    # # 2.2
-    # inliers, outliers = filter_and_plot_rectified_matches(left_img, right_img, matches, left_kp, right_kp)
-    #
-    # # 2.3
-    # points_3d_manual, points_3d_cv = main_2_3(inliers, left_kp, right_kp)
+    #2.1
+    left_img, right_img, left_kp, right_kp, _, _, matches = read_and_extract_matches(0)
+
+    # 2.2
+    inliers, outliers = filter_rectified_matches(matches, left_kp, right_kp)
+    main_2_2(left_img, right_img, left_kp, right_kp, matches, inliers, outliers)
+
+    # 2.3
+    points_3d_manual, points_3d_cv = main_2_3(inliers, left_kp, right_kp)
     main_2_4()

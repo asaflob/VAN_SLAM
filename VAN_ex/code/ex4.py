@@ -1,5 +1,5 @@
 from tracking_database import *
-from PnP_RANSAC_ex2 import *
+from ex3 import *
 import matplotlib.pyplot as plt
 import cv2
 import numpy as np
@@ -86,7 +86,7 @@ def track_full_sequence_ex4(sequence_dir, K, P, Q, db, log_filename="movement_lo
                 best_R, best_t, best_supporters = RANSAC(
                     prev_inliers, temporal_matches, curr_inliers, prev_points_3d,
                     prev_left_kp, prev_right_kp, curr_left_kp, curr_right_kp,
-                    P, Q, K, obj_points_3d, img_points_2d, p=0.99, threshold=2.0
+                    P, Q, K, obj_points_3d, img_points_2d, p=0.99, threshold=3.0
                 )
 
                 if best_R is not None and len(best_supporters) >= 4:
@@ -406,7 +406,7 @@ if __name__ == '__main__':
 
     left_images_dir = os.path.join(sequence_dir, 'image_0')
     db = TrackingDB()
-    db_filename = 'my_tracking_data'
+    db_filename = 'my_tracking_data_ex4'
     K, M1, M2 = read_cameras()
     P, Q = K @ M1, K @ M2  # multiply by intrinsic camera matrix
     try:
