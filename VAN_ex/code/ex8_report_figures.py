@@ -24,11 +24,11 @@ Pose convention (verified empirically against the data, see report):
     GTSAM Pose3 results (bundle / pose-graph) are already camera-to-world, so
     their .matrix() plugs straight into the same helpers.
 
-Run:
-    <VAN_SLAM python> ex8_report_figures.py
+
+
 """
 import matplotlib
-matplotlib.use('Agg')  # headless: never blocks on plt.show()
+matplotlib.use('Agg')
 
 import os
 import pickle
